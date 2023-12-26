@@ -1,0 +1,20 @@
+version: '3'
+services:
+  dev:
+    build:
+      context: .
+      args:
+        - USERNAME=yang
+        - USER_UID=1024
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ipc: host
+    volumes:
+      - /home/yang/workspace:/home/yang/workspace
+      - /home/yang/data:/home/yang/data
+    command: /bin/sh -c "while sleep 1000; do :; done"

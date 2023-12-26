@@ -1,0 +1,9 @@
+{
+  "name": "mmdetection",
+  "dockerComposeFile": ["./docker-compose.yml"],
+  "service": "dev",
+  "workspaceFolder": "/home/yang/workspace",
+  "extensions": ["ms-python.python","ms-toolsai.jupyter","ms-python.vscode-pylance","christian-kohler.path-intellisense"],
+  "shutdownAction": "none",
+  "updateRemoteUserUID": false, // manually set uid in docker-compose.yml
+}
