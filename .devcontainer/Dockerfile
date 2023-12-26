@@ -12,6 +12,7 @@ RUN groupadd --gid $USER_GID $USERNAME \
     && apt update \
     && apt upgrade --no-install-recommends -y \
     && apt install --no-install-recommends -y sudo curl wget git tmux \
+    && apt install --no-install-recommends -y libglib2.0-0 libsm6 libxrender1 libxext6 libgl1-mesa-dev \
     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME \
     && apt autoremove -y \
