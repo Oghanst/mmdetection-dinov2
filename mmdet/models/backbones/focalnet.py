@@ -14,9 +14,7 @@ import torch.utils.checkpoint as checkpoint
 import numpy as np
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
-from mmcv_custom import load_checkpoint
-from mmdet.utils import get_root_logger
-from ..builder import BACKBONES
+from mmdet.registry import MODELS
 
 class Mlp(nn.Module):
     """ Multilayer perceptron."""
@@ -313,7 +311,7 @@ class PatchEmbed(nn.Module):
         return x
 
 
-@BACKBONES.register_module()
+@MODELS.register_module()
 class FocalNet(nn.Module):
     """ FocalNet backbone.
 
@@ -420,12 +418,8 @@ class FocalNet(nn.Module):
                 for param in m.parameters():
                     param.requires_grad = False
 
-    def init_weights(self, pretrained=None):
+    def init_weights(self):
         """Initialize the weights in backbone.
-
-        Args:
-            pretrained (str, optional): Path to pre-trained weights.
-                Defaults to None.
         """
 
         def _init_weights(m):
@@ -437,14 +431,7 @@ class FocalNet(nn.Module):
                 nn.init.constant_(m.bias, 0)
                 nn.init.constant_(m.weight, 1.0)
 
-        if isinstance(pretrained, str):
-            self.apply(_init_weights)
-            logger = get_root_logger()
-            load_checkpoint(self, pretrained, strict=False, logger=logger)
-        elif pretrained is None:
-            self.apply(_init_weights)
-        else:
-            raise TypeError('pretrained must be a str or None')
+        self.apply(_init_weights)
 
     def forward(self, x):
         """Forward function."""
