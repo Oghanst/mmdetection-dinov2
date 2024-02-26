@@ -1,6 +1,15 @@
 _base_ = [
     '../_base_/datasets/coco_detection_visdrone.py', '../_base_/wandb_runtime.py'
 ]
+
+# How to run it?
+# 1. immport mmpretrain
+# export PYTHONPATH=$PWD:$PYTHONPATH
+# CUDA_VISIBLE_DEVICES=2 python tools/train.py configs/dino/dino-4scale_dinov2-small_8xb2-12e_visdrone.py --work-dir work_dirs/dino-4scale_dinov2-small_8xb2-12e_visdrone
+# CUDA_VISIBLE_DEVICES=2 nohup python tools/train.py configs/dino/dino-4scale_dinov2-small_8xb2-12e_visdrone.py --work-dir work_dirs/dino-4scale_dinov2-small_8xb2-12e_visdrone > work_dirs/dino-4scale_dinov2-base_8xb2-12e_visdrone_img1024.log 2>&1 &
+checkpoint_file = 'https://download.openmmlab.com/mmpretrain/v1.0/dinov2/vit-small-p14_dinov2-pre_3rdparty_20230426-5641ca5a.pth' 
+max_epochs = 12
+learning_rate = 1e-5
 model = dict(
     type='DINO',
     num_queries=900,  # num_matching_queries
@@ -13,18 +22,24 @@ model = dict(
         bgr_to_rgb=True,
         pad_size_divisor=1),
     backbone=dict(
-        type='ResNet',
-        depth=50,
-        num_stages=4,
+        type='mmpretrain.VisionTransformer',
+        arch = 'dinov2-small',
+        patch_size=14,
+        out_type = "featmap",
+        img_size= 512,
         out_indices=(1, 2, 3),
-        frozen_stages=1,
-        norm_cfg=dict(type='BN', requires_grad=False),
-        norm_eval=True,
-        style='pytorch',
-        init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50')),
+        frozen_stages = 1,
+        layer_scale_init_value = 1e-5,
+        norm_cfg=dict(type='LN', requires_grad=False),
+        final_norm = True,
+        init_cfg=dict(
+            type='Pretrained',
+            checkpoint=checkpoint_file,
+        )
+    ),
     neck=dict(
         type='ChannelMapper',
-        in_channels=[512, 1024, 2048],
+        in_channels=[384,384,384],
         kernel_size=1,
         out_channels=256,
         act_cfg=None,
@@ -84,7 +99,6 @@ model = dict(
                 dict(type='IoUCost', iou_mode='giou', weight=2.0)
             ])),
     test_cfg=dict(max_per_img=300))  # 100 for DeformDETR
-
 # train_pipeline, NOTE the img_scale and the Pad's size_divisor is different
 # from the default setting in mmdet.
 train_pipeline = [
@@ -128,12 +142,27 @@ train_dataloader = dict(
     dataset=dict(
         filter_cfg=dict(filter_empty_gt=False), pipeline=train_pipeline))
 
+# vis
+vis_backends = [dict(type='LocalVisBackend'), 
+                dict(type='WandbVisBackend',
+                     init_kwargs=dict(
+                         project='pure-seg',
+                         name = f'dino_dinov2_samll_visdrone_cosine_lr{learning_rate}_{max_epochs}e',
+                         group='dino_dinov2',
+                         resume=True))
+                ]
+
+visualizer = dict(
+    type='DetLocalVisualizer', vis_backends=vis_backends, name='visualizer')
+log_processor = dict(type='LogProcessor', window_size=50, by_epoch=True)
+
+
 # optimizer
 optim_wrapper = dict(
     type='OptimWrapper',
     optimizer=dict(
         type='AdamW',
-        lr=0.0001,  # 0.0002 for DeformDETR
+        lr=learning_rate,  # 0.0002 for DeformDETR
         weight_decay=0.0001),
     clip_grad=dict(max_norm=0.1, norm_type=2),
     paramwise_cfg=dict(custom_keys={'backbone': dict(lr_mult=0.1)})
@@ -147,21 +176,19 @@ train_cfg = dict(
 val_cfg = dict(type='ValLoop')
 test_cfg = dict(type='TestLoop')
 
+
+# new parm_scheduler
+base_lr = learning_rate
 param_scheduler = [
     dict(
-        type='MultiStepLR',
-        begin=0,
+        # use cosine lr from 150 to 300 epoch
+        type='CosineAnnealingLR',
+        eta_min=base_lr * 0.05,
+        begin=max_epochs // 3,
         end=max_epochs,
+        T_max=max_epochs // 2,
         by_epoch=True,
-        milestones=[11],
-        gamma=0.1)
+        convert_to_iter_based=True),
 ]
 
-# NOTE: `auto_scale_lr` is for automatically scaling LR,
-# USER SHOULD NOT CHANGE ITS VALUES.
-# base_batch_size = (8 GPUs) x (2 samples per GPU)
 auto_scale_lr = dict(base_batch_size=16)
-
-
-# how to run it
-# python tools/train.py configs/dino/dino-4scale_r50_8xb2-12e_coco.py --work-dir work_dirs/dino-4scale_r50_8xb2-12e_coco

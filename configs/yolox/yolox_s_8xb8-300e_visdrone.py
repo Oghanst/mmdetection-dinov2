@@ -1,10 +1,12 @@
 _base_ = [
-    '../_base_/schedules/schedule_1x.py', '../_base_/default_runtime.py',
-    './yolox_tta.py'
+    '../_base_/schedules/schedule_1x.py',
+    './yolox_tta.py',
+    '../_base_/datasets/coco_detection_visdrone.py', 
+    '../_base_/wandb_runtime.py'
 ]
-# CUDA_VISIBLE_DEVICES=1 python tools/train.py configs/yolox/yolox_s_8xb8-300e_coco.py --work-dir work_dirs/yolox_s_8xb8-300e_coco
-img_scale = (640, 640)  # width, height
-
+# CUDA_VISIBLE_DEVICES=1 python tools/train.py configs/yolox/yolox_s_8xb8-300e_visdrone.py --work-dir work_dirs/yolox_s_8xb8-300e_visdrone
+# CUDA_VISIBLE_DEVICES=1 nohup python tools/train.py configs/yolox/yolox_s_8xb8-300e_visdrone.py --work-dir work_dirs/yolox_s_8xb8-300e_visdrone > work_dirs/yolox_s_8xb8-300e_visdrone.log 2>&1 &
+img_scale = (1333, 800)  # width, height
 # model settings
 model = dict(
     type='YOLOX',
@@ -39,7 +41,7 @@ model = dict(
         act_cfg=dict(type='Swish')),
     bbox_head=dict(
         type='YOLOXHead',
-        num_classes=80,
+        num_classes=1,
         in_channels=128,
         feat_channels=128,
         stacked_convs=2,
@@ -70,8 +72,8 @@ model = dict(
     test_cfg=dict(score_thr=0.01, nms=dict(type='nms', iou_threshold=0.65)))
 
 # dataset settings
-data_root = 'data/coco/'
 dataset_type = 'CocoDataset'
+data_root = '/home/yang/data/smoke-fire-person-dataset/person/VisDrone' 
 
 # Example to use different file client
 # Method 1: simply set the data root and let the file I/O module
@@ -89,58 +91,17 @@ dataset_type = 'CocoDataset'
 backend_args = None
 
 train_pipeline = [
-    dict(type='Mosaic', img_scale=img_scale, pad_val=114.0),
-    dict(
-        type='RandomAffine',
-        scaling_ratio_range=(0.1, 2),
-        # img_scale is (width, height)
-        border=(-img_scale[0] // 2, -img_scale[1] // 2)),
-    dict(
-        type='MixUp',
-        img_scale=img_scale,
-        ratio_range=(0.8, 1.6),
-        pad_val=114.0),
-    dict(type='YOLOXHSVRandomAug'),
-    dict(type='RandomFlip', prob=0.5),
-    # According to the official implementation, multi-scale
-    # training is not considered here but in the
-    # 'mmdet/models/detectors/yolox.py'.
-    # Resize and Pad are for the last 15 epochs when Mosaic,
-    # RandomAffine, and MixUp are closed by YOLOXModeSwitchHook.
+    dict(type='LoadImageFromFile', backend_args={{_base_.backend_args}}),
+    dict(type='LoadAnnotations', with_bbox=True, with_mask=True),
     dict(type='Resize', scale=img_scale, keep_ratio=True),
-    dict(
-        type='Pad',
-        pad_to_square=True,
-        # If the image is three-channel, the pad value needs
-        # to be set separately for each channel.
-        pad_val=dict(img=(114.0, 114.0, 114.0))),
-    dict(type='FilterAnnotations', min_gt_bbox_wh=(1, 1), keep_empty=False),
+    dict(type='RandomFlip', prob=0.5),
     dict(type='PackDetInputs')
 ]
 
-train_dataset = dict(
-    # use MultiImageMixDataset wrapper to support mosaic and mixup
-    type='MultiImageMixDataset',
-    dataset=dict(
-        type=dataset_type,
-        data_root=data_root,
-        ann_file='annotations/instances_train2017.json',
-        data_prefix=dict(img='train2017/'),
-        pipeline=[
-            dict(type='LoadImageFromFile', backend_args=backend_args),
-            dict(type='LoadAnnotations', with_bbox=True)
-        ],
-        filter_cfg=dict(filter_empty_gt=False, min_size=32),
-        backend_args=backend_args),
-    pipeline=train_pipeline)
 
 test_pipeline = [
     dict(type='LoadImageFromFile', backend_args=backend_args),
     dict(type='Resize', scale=img_scale, keep_ratio=True),
-    dict(
-        type='Pad',
-        pad_to_square=True,
-        pad_val=dict(img=(114.0, 114.0, 114.0))),
     dict(type='LoadAnnotations', with_bbox=True),
     dict(
         type='PackDetInputs',
@@ -150,22 +111,21 @@ test_pipeline = [
 
 train_dataloader = dict(
     batch_size=8,
-    num_workers=4,
-    persistent_workers=True,
-    sampler=dict(type='DefaultSampler', shuffle=True),
-    dataset=train_dataset)
+    dataset=dict(
+        filter_cfg=dict(filter_empty_gt=False), pipeline=train_pipeline))
+
 
 val_dataloader = dict(
     batch_size=8,
-    num_workers=4,
+    num_workers=1,
     persistent_workers=True,
     drop_last=False,
     sampler=dict(type='DefaultSampler', shuffle=False),
     dataset=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file='annotations/instances_val2017.json',
-        data_prefix=dict(img='val2017/'),
+        ann_file='test/test.json',
+        data_prefix=dict(img='test/images'),
         test_mode=True,
         pipeline=test_pipeline,
         backend_args=backend_args))
@@ -173,7 +133,7 @@ test_dataloader = val_dataloader
 
 val_evaluator = dict(
     type='CocoMetric',
-    ann_file=data_root + 'annotations/instances_val2017.json',
+    ann_file=data_root + '/test/test.json',
     metric='bbox',
     backend_args=backend_args)
 test_evaluator = val_evaluator
@@ -184,6 +144,23 @@ num_last_epochs = 15
 interval = 10
 
 train_cfg = dict(max_epochs=max_epochs, val_interval=interval)
+
+
+# vis
+vis_backends = [dict(type='LocalVisBackend'), 
+                dict(type='WandbVisBackend',
+                     init_kwargs=dict(
+                         project='Xin-Dalu',
+                         name = f'yolox_s_8xb8-{max_epochs}e_visdrone',
+                         group='yolox',
+                         resume=True))
+                ]
+
+visualizer = dict(
+    type='DetLocalVisualizer', vis_backends=vis_backends, name='visualizer')
+log_processor = dict(type='LogProcessor', window_size=50, by_epoch=True)
+
+
 
 # optimizer
 # default 8 gpu

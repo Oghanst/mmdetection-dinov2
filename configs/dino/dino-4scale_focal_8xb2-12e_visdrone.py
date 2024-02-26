@@ -1,38 +1,39 @@
 _base_ = [
     '../_base_/datasets/coco_detection_visdrone.py', '../_base_/wandb_runtime.py'
 ]
+# How to run it?
+# 1. immport mmpretrain
+# export PYTHONPATH=$PWD:$PYTHONPATH
+# CUDA_VISIBLE_DEVICES=0 python tools/train.py configs/dino/dino-4scale_focal_8xb2-12e_visdrone.py --work-dir work_dirs/dino-4scale_focal_8xb2-12e_visdrone
+
 model = dict(
     type='DINO',
     num_queries=900,  # num_matching_queries
     with_box_refine=True,
     as_two_stage=True,
-    data_preprocessor=dict(
-        type='DetDataPreprocessor',
-        mean=[123.675, 116.28, 103.53],
-        std=[58.395, 57.12, 57.375],
-        bgr_to_rgb=True,
-        pad_size_divisor=1),
+    num_feature_levels=4,
     backbone=dict(
-        type='ResNet',
-        depth=50,
-        num_stages=4,
+        type='FocalNet',
+        depths=[4, 4, 28, 4],
+        drop_path_rate=0.3,
+        mlp_ratio=4.,
+        patch_norm=True,
+        focal_levels=[3,3,3,3],
         out_indices=(1, 2, 3),
-        frozen_stages=1,
-        norm_cfg=dict(type='BN', requires_grad=False),
-        norm_eval=True,
-        style='pytorch',
-        init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50')),
+        
+        frozen_stages=1,),
     neck=dict(
         type='ChannelMapper',
-        in_channels=[512, 1024, 2048],
+        in_channels=[192, 384, 768, 1536],
         kernel_size=1,
         out_channels=256,
         act_cfg=None,
         norm_cfg=dict(type='GN', num_groups=32),
-        num_outs=4),
+        num_outs=5),
     encoder=dict(
         num_layers=6,
         layer_cfg=dict(
+            
             self_attn_cfg=dict(embed_dims=256, num_levels=4,
                                dropout=0.0),  # 0.1 for DeformDETR
             ffn_cfg=dict(
@@ -69,7 +70,7 @@ model = dict(
             loss_weight=1.0),  # 2.0 in DeformDETR
         loss_bbox=dict(type='L1Loss', loss_weight=5.0),
         loss_iou=dict(type='GIoULoss', loss_weight=2.0)),
-    dn_cfg=dict(  # TODO: Move to model.train_cfg ?
+    dn_cfg=dict(
         label_noise_scale=0.5,
         box_noise_scale=1.0,  # 0.4 for DN-DETR
         group_cfg=dict(dynamic=True, num_groups=None,
@@ -85,8 +86,7 @@ model = dict(
             ])),
     test_cfg=dict(max_per_img=300))  # 100 for DeformDETR
 
-# train_pipeline, NOTE the img_scale and the Pad's size_divisor is different
-# from the default setting in mmdet.
+
 train_pipeline = [
     dict(type='LoadImageFromFile', backend_args={{_base_.backend_args}}),
     dict(type='LoadAnnotations', with_bbox=True),
@@ -128,6 +128,21 @@ train_dataloader = dict(
     dataset=dict(
         filter_cfg=dict(filter_empty_gt=False), pipeline=train_pipeline))
 
+# vis
+vis_backends = [dict(type='LocalVisBackend'), 
+                # dict(type='WandbVisBackend',
+                #      init_kwargs=dict(
+                #          project='pure-seg',
+                #          name = f'dino_focal_visdrone',
+                #          group='dino_focal',
+                #          resume=True))
+                ]
+
+visualizer = dict(
+    type='DetLocalVisualizer', vis_backends=vis_backends, name='visualizer')
+log_processor = dict(type='LogProcessor', window_size=50, by_epoch=True)
+
+
 # optimizer
 optim_wrapper = dict(
     type='OptimWrapper',
@@ -156,12 +171,3 @@ param_scheduler = [
         milestones=[11],
         gamma=0.1)
 ]
-
-# NOTE: `auto_scale_lr` is for automatically scaling LR,
-# USER SHOULD NOT CHANGE ITS VALUES.
-# base_batch_size = (8 GPUs) x (2 samples per GPU)
-auto_scale_lr = dict(base_batch_size=16)
-
-
-# how to run it
-# python tools/train.py configs/dino/dino-4scale_r50_8xb2-12e_coco.py --work-dir work_dirs/dino-4scale_r50_8xb2-12e_coco
