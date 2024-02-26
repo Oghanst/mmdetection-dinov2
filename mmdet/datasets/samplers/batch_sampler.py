@@ -48,7 +48,7 @@ class AspectRatioBatchSampler(BatchSampler):
             if len(bucket) == self.batch_size:
                 yield bucket[:]
                 del bucket[:]
-
+        # set
         # yield the rest data and reset the bucket
         left_data = self._aspect_ratio_buckets[0] + self._aspect_ratio_buckets[
             1]

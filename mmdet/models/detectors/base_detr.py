@@ -2,7 +2,7 @@
 from abc import ABCMeta, abstractmethod
 from typing import Dict, List, Tuple, Union
 
-from torch import Tensor
+from torch import Tensor, stack
 
 from mmdet.registry import MODELS
 from mmdet.structures import OptSampleList, SampleList
